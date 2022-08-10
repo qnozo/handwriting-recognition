@@ -43,11 +43,12 @@ code  color
 #include "model_settings.h"
 
 
-#include "<tensorflow/lite/micro/all_ops_resolver.h>"
-#include "<tensorflow/lite/micro/micro_error_reporter.h>"
-#include "<tensorflow/lite/micro/micro_interpreter.h>"
-#include "<tensorflow/lite/micro/micro_mutable_op_resolver.h>"
-#include "<tensorflow/lite/schema/schema_generated.h>"
+#include "tensorflow/lite/micro/all_ops_resolver.h"
+#include "tensorflow/lite/micro/micro_error_reporter.h"
+#include "tensorflow/lite/micro/micro_interpreter.h"
+#include "tensorflow/lite/micro/micro_utils.h"
+#include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
+#include "tensorflow/lite/schema/schema_generated.h"
 TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 
 #define CALIBRATION_FILE "/TouchCalData3"
@@ -123,10 +124,10 @@ namespace
 void touch_calibrate();
 bool contains(int16_t x, int16_t y);
 void get_image();
-void resize(uint8_t *image, int8_t *resized_image, uint8_t w1, uint8_t h1, uint8_t w2, uint8_t h2);
-void image_to_serial(int8_t *resized_image);
+void resize(uint8_t *image, uint8_t *resized_image, uint8_t w1, uint8_t h1, uint8_t w2, uint8_t h2);
+void image_to_serial(uint8_t *resized_image);
 void sendParameters();
-void predict(int8_t *image);
+void predict(uint8_t *resized_image);
 
 void setup()
 {
@@ -238,7 +239,7 @@ void loop()
 
                     get_image();
 
-                    int8_t resized_image[kNumRows * kNumCols];
+                    uint8_t resized_image[kNumRows * kNumCols];
                     resize(image, resized_image, BOX_W, BOX_H, kNumCols, kNumRows);
                     predict(resized_image);
 
@@ -338,6 +339,7 @@ bool contains(int16_t x, int16_t y)
 void get_image()
 {
     // uint32_t i = 0;
+    
     for (uint32_t y = 0; y < BOX_H; y++)
     {
         for (uint32_t x = 0; x < BOX_W; x++)
@@ -348,12 +350,12 @@ void get_image()
             uint8_t gray = ((c >> 8) * 0.5) + ((c & 0xFF) * 0.5);
 
             // uint8 color[2];
-            image[(y * BOX_W) + x] = gray / 255;
+            image[(y * BOX_W) + x] = gray / 255.0f;
         }
     }
 }
 
-void image_to_serial(int8_t *resized_image)
+void image_to_serial(uint8_t *resized_image)
 {
     uint32_t clearTime = millis() + 50;
     while (millis() < clearTime && Serial.read() >= 0)
@@ -416,22 +418,24 @@ void image_to_serial(int8_t *resized_image)
     tft.fillRect(BOX_X, BOX_Y, BOX_W, BOX_H, TFT_WHITE);
 }
 
-void resize(uint8_t *image, int8_t *resized_image, uint8_t w1, uint8_t h1, uint8_t w2, uint8_t h2)
+void resize(uint8_t *image, uint8_t *resized_image, uint8_t w1, uint8_t h1, uint8_t w2, uint8_t h2)
 {
     uint32_t x_ratio = ((w1 << 16) / w2) + 1;
     uint32_t y_ratio = ((h1 << 16) / h2) + 1;
     uint32_t x = 0, y = 0;
     for (uint32_t i = 0; i < h2; i++)
     {
-        for (uint32_t j = 0; j < w2; j++)
+    for (uint32_t j = 0; j < w2; j++)
         {
+    
+        
             x = ((j * x_ratio) >> 16);
             y = ((i * y_ratio) >> 16);
             // Serial.print("("); Serial.print((i * w2) + j); Serial.print(", "); Serial.print((y * w1) + x); Serial.print(")");
 
             resized_image[(i * w2) + j] = image[(y * w1) + x];
             // Serial.print(resized_image[(i * w2) + j]); Serial.print(", ");
-            // from uint8_t to int8_t ^0x80
+            // from uint8_t to uint8_t ^0x80
 
             // resized_image[i][j] = image[(y * w1) + x] ^ 0x80;
         }
@@ -465,23 +469,26 @@ void sendParameters()
     Serial.write(*FILE_TYPE); // First character defines file type j,b,p,t
 }
 
-void predict(int8_t *image)
+void predict(uint8_t *resized_image)
 {
-    Serial.print(input->type);
-    memcpy(input->data.int8, image, input->bytes);
+
+    // memcpy(input->data.uint8, image, input->bytes);
     // Run the model on this input and make sure it succeeds.
-    // for (uint32_t i = 0; i < kNumRows; i++)
-    // {
-    //     for (uint32_t j = 0; j < kNumCols; j++)
-    //     {
-    //         Serial.print(input->data.int8[i * kNumCols + j]); Serial.print(", ");
-    //     }
-    //     Serial.println();
-    // }
+    // Serial.print((float) output->params.scale);
+    for (uint32_t i = 0; i < kNumRows; i++)
+    {
+        for (uint32_t j = 0; j < kNumCols; j++)
+        {
+            
+            input->data.uint8[i * kNumCols + j] = tflite::FloatToQuantizedType<uint8_t>(
+                resized_image[(i * kNumCols) + j], input->params.scale, input->params.zero_point);
+            // Serial.print(input->data.uint8[i * kNumCols + j]); Serial.print(", ");
+        }
+        // Serial.println();
+    }
     // for (uint32_t i = 0; i < kNumRows * kNumCols; i++)
     // {
-    //     input->data.int8[i] = image[i];
-    //     // / input->params.scale + input->params.zero_point;
+    //     input->data.uint8[i] = resized_image[i] / input->params.scale + input->params.zero_point;
     // }
 
     if (kTfLiteOk != interpreter->Invoke())
@@ -495,10 +502,10 @@ void predict(int8_t *image)
     TfLiteTensor *output_tensor = interpreter->output(0);
     uint8_t index = 0;
     float max = 0;
-    for (uint8_t i = 0; i < 62; i++)
+    for (uint8_t i = 0; i < kCategoryCount; i++)
     {
-        // float result = (output_tensor->data.int8[i] - output->params.zero_point) * output->params.scale;
-        float result = output_tensor->data.int8[i];
+        float result = (output_tensor->data.uint8[i] - output->params.zero_point) * output->params.scale;
+        // float result = output_tensor->data.uint8[i];
         if (result > max)
         {
             max = result;
