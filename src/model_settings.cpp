@@ -62,4 +62,5 @@ const char *kCategoryLabels[kCategoryCount] = {
     "w",
     "x",
     "y",
-    "z"};
+    "z"
+    };
