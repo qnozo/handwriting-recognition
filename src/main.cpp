@@ -96,17 +96,20 @@ TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 #define BUTTONS_SPACING_X 18 // X and Y gap
 #define BUTTONS_SPACING_Y 25
 #define BUTTONS_TEXTSIZE 1
-char buttonsLabel[3][8] = {"Clear", "Predict", "Send"};
-uint16_t buttonsColor[3] = {TFT_RED, TFT_LIGHTGREY, TFT_GREEN};
+char buttonsLabel[4][8] = {"Clear", "Predict", "Send", "Del"};
+uint16_t buttonsColor[4] = {TFT_RED, TFT_LIGHTGREY, TFT_GREEN, TFT_RED};
 
-TFT_eSPI_Button buttons[3];
+TFT_eSPI_Button buttons[4];
 
 //---------
-
+#define TEXT_X 5
+#define TEXT_Y 220
+#define TEXT_WIDTH 230
+#define TEXT_HEIGHT 40
 // uint8_t image[BOX_H * BOX_W];
 uint8_t *image;
 #define TO_SERIAL false
-
+char text[256] = "";
 namespace
 {
     tflite::ErrorReporter *error_reporter = nullptr;
@@ -127,7 +130,7 @@ void get_image();
 void resize(uint8_t *image, uint8_t *resized_image, uint8_t w1, uint8_t h1, uint8_t w2, uint8_t h2);
 void image_to_serial(uint8_t *resized_image);
 void sendParameters();
-void predict(uint8_t *resized_image);
+char predict(uint8_t *resized_image);
 
 void setup()
 {
@@ -145,11 +148,20 @@ void setup()
 
     tft.fillRect(BOX_X, BOX_Y, BOX_W, BOX_H, TFT_WHITE);
 
+
+    tft.fillRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_WHITE);
+    tft.drawRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_LIGHTGREY);
+
     for (uint8_t i = 0; i < 3; i++)
     {
         buttons[i].initButton(&tft, BUTTONS_X + i * (BUTTONS_W + BUTTONS_SPACING_X), BUTTONS_Y, BUTTONS_W, BUTTONS_H, TFT_BLACK, buttonsColor[i], TFT_BLACK, buttonsLabel[i], BUTTONS_TEXTSIZE);
         buttons[i].drawButton();
     }
+    buttons[3].initButton(&tft, TEXT_WIDTH - 30, TEXT_Y + 20, BUTTONS_W, BUTTONS_H, TFT_BLACK, buttonsColor[3], TFT_BLACK, buttonsLabel[3], BUTTONS_TEXTSIZE);
+    buttons[3].drawButton();
+
+
+    
 
     image = (uint8_t *)heap_caps_malloc(BOX_W * BOX_H, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     // tensorflow lite setup
@@ -213,7 +225,7 @@ void loop()
         if (contains(x, y))
             tft.fillCircle(x, y, SIZE, TFT_BLACK);
 
-        for (uint8_t b = 0; b < 3; b++)
+        for (uint8_t b = 0; b < 4; b++)
         {
             if (buttons[b].contains(x, y))
                 buttons[b].press(true);
@@ -221,7 +233,7 @@ void loop()
                 buttons[b].press(false);
         }
 
-        for (uint8_t b = 0; b < 3; b++)
+        for (uint8_t b = 0; b < 4; b++)
         {
             if (buttons[b].justReleased())
                 buttons[b].drawButton();
@@ -235,23 +247,43 @@ void loop()
                     tft.fillRect(BOX_X, BOX_Y, BOX_W, BOX_H, TFT_WHITE);
                     break;
                 case 1:
+                    {
                     // get_image
 
                     get_image();
 
                     uint8_t resized_image[kNumRows * kNumCols];
                     resize(image, resized_image, BOX_W, BOX_H, kNumCols, kNumRows);
-                    predict(resized_image);
+                    int len = strlen(text);
+                    text[len] = predict(resized_image);
+                    text[len + 1] = '\0';
+                    
+                    // tft.fillRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_WHITE);
+                    tft.setTextColor(TFT_BLACK, TFT_WHITE);
+                    tft.drawString(text, TEXT_X + 10, TEXT_Y + 10, 4);
 
+                    tft.fillRect(BOX_X, BOX_Y, BOX_W, BOX_H, TFT_WHITE);
                     // debug
                     if (TO_SERIAL)
                         image_to_serial(resized_image);
                     break;
+                    }
                 case 2:
                     // send
 
                     break;
+                case 3: 
+                    // clear text
+                    tft.fillRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_WHITE);
+                    tft.drawRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_LIGHTGREY);
+                    int len = strlen(text);
+                    text[len-1] = '\0';
+                    tft.setTextColor(TFT_BLACK, TFT_WHITE);
+                    tft.drawString(text, TEXT_X + 10, TEXT_Y + 10, 4);
+                    buttons[3].drawButton(true);
+                    break;
                 }
+                
             }
         }
     }
@@ -469,7 +501,7 @@ void sendParameters()
     Serial.write(*FILE_TYPE); // First character defines file type j,b,p,t
 }
 
-void predict(uint8_t *resized_image)
+char predict(uint8_t *resized_image)
 {
 
     // memcpy(input->data.uint8, image, input->bytes);
@@ -495,7 +527,7 @@ void predict(uint8_t *resized_image)
     {
         TF_LITE_REPORT_ERROR(error_reporter, "Invoke failed.");
 
-        return;
+        return (char)0;
     }
 
     // Get the output tensor
@@ -518,8 +550,9 @@ void predict(uint8_t *resized_image)
         // Serial.print(")");
         // Serial.print(",");
     }
-    Serial.println();
-    Serial.print(index);
-    Serial.print(", ");
-    Serial.print(kCategoryLabels[index]);
+    // Serial.println();
+    // Serial.print(index);
+    // Serial.print(", ");
+    // Serial.print();
+    return kCategoryLabels[index];
 }

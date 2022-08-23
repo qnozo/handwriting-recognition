@@ -11,6 +11,6 @@ constexpr int kMaxImageSize = kNumCols * kNumRows;
 
 constexpr int kCategoryCount = 62;
 
-extern const char* kCategoryLabels[kCategoryCount];
+extern const char kCategoryLabels[kCategoryCount];
 
 #endif // HANDWRITTEN_DIGIT_MODEL_SETTINGS_H_
