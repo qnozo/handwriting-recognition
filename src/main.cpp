@@ -1,37 +1,3 @@
-/*
- An example digital clock using a TFT LCD screen to show the time.
- Demonstrates use of the font printing routines. (Time updates but date does not.)
-
- It uses the time of compile/upload to set the time
- For a more accurate clock, it would be better to use the RTClib library.
- But this is just a demo...
-
- Make sure all the display driver and pin connections are correct by
- editing the User_Setup.h file in the TFT_eSPI library folder.
-
- #########################################################################
- ###### DON'T FORGET TO UPDATE THE User_Setup.h FILE IN THE LIBRARY ######
- #########################################################################
-
- Based on clock sketch by Gilchrist 6/2/2014 1.0
-
-A few colour codes:
-
-code  color
-0x0000  Black
-0xFFFF  White
-0xBDF7  Light Gray
-0x7BEF  Dark Gray
-0xF800  Red
-0xFFE0  Yellow
-0xFBE0  Orange
-0x79E0  Brown
-0x7E0 Green
-0x7FF Cyan
-0x1F  Blue
-0xF81F  Pink
-
- */
 #include <Arduino.h>
 
 #include "FS.h"
@@ -370,13 +336,12 @@ bool contains(int16_t x, int16_t y)
 
 void get_image()
 {
-    // uint32_t i = 0;
     
     for (uint32_t y = 0; y < BOX_H; y++)
     {
         for (uint32_t x = 0; x < BOX_W; x++)
         {
-            // TODO: get rgb color
+         
 
             uint16_t c = tft.readPixel(x, y);
             uint8_t gray = ((c >> 8) * 0.5) + ((c & 0xFF) * 0.5);
@@ -463,15 +428,10 @@ void resize(uint8_t *image, uint8_t *resized_image, uint8_t w1, uint8_t h1, uint
         
             x = ((j * x_ratio) >> 16);
             y = ((i * y_ratio) >> 16);
-            // Serial.print("("); Serial.print((i * w2) + j); Serial.print(", "); Serial.print((y * w1) + x); Serial.print(")");
+           
 
             resized_image[(i * w2) + j] = image[(y * w1) + x];
-            // Serial.print(resized_image[(i * w2) + j]); Serial.print(", ");
-            // from uint8_t to uint8_t ^0x80
-
-            // resized_image[i][j] = image[(y * w1) + x] ^ 0x80;
         }
-        // Serial.println();
     }
 }
 
@@ -504,9 +464,6 @@ void sendParameters()
 char predict(uint8_t *resized_image)
 {
 
-    // memcpy(input->data.uint8, image, input->bytes);
-    // Run the model on this input and make sure it succeeds.
-    // Serial.print((float) output->params.scale);
     for (uint32_t i = 0; i < kNumRows; i++)
     {
         for (uint32_t j = 0; j < kNumCols; j++)
@@ -514,14 +471,11 @@ char predict(uint8_t *resized_image)
             
             input->data.uint8[i * kNumCols + j] = tflite::FloatToQuantizedType<uint8_t>(
                 resized_image[(i * kNumCols) + j], input->params.scale, input->params.zero_point);
-            // Serial.print(input->data.uint8[i * kNumCols + j]); Serial.print(", ");
+
         }
-        // Serial.println();
+      
     }
-    // for (uint32_t i = 0; i < kNumRows * kNumCols; i++)
-    // {
-    //     input->data.uint8[i] = resized_image[i] / input->params.scale + input->params.zero_point;
-    // }
+
 
     if (kTfLiteOk != interpreter->Invoke())
     {
@@ -543,16 +497,8 @@ char predict(uint8_t *resized_image)
             max = result;
             index = i;
         }
-        // Serial.print("(");
-        // Serial.print(result);
-        // Serial.print(",");
-        // Serial.print(i);
-        // Serial.print(")");
-        // Serial.print(",");
+
     }
-    // Serial.println();
-    // Serial.print(index);
-    // Serial.print(", ");
-    // Serial.print();
+
     return kCategoryLabels[index];
 }
