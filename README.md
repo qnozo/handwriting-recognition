@@ -1,6 +1,7 @@
 # HANDWRITING RECOGNITION
 
 This repository contains the code for the Final Project of the Internet of Things course in the Artificial Intelligence master degree at UniBo.
+## Project description
 
 Machine learning and deep learning have become indispensable part of the existing technological
 domain. Edge computing and Internet of Things (IoT) together presents a new opportunity to
@@ -12,9 +13,6 @@ are in particularly to maintain the accuracy of learning models, provide train-t
 in resource frugal tiny edge devices, optimizing processing capacity, and improving reliability.
 In this project, we present an application about such possibilities for TinyML in the context of
 handwritten recognition challenge.
-
-## Project description
-
 we propose the idea to make inference directly on a micro controller that is electronically linked with the input source of the character
 and obtain the prediction of it. This is possible thanks to the Tiny ML technologies available
 and in particular thanks to the TensorFlowLite library and its compatibility with the ESP32 microcontroller.
