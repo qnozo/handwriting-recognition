@@ -32,3 +32,6 @@ letter in order to compose a word, shown on the display with a graphic interface
 with three buttons each one associated to an action. 
 
 ![application](https://user-images.githubusercontent.com/87801874/190124980-dba3ef93-efc1-4a76-9d0c-7d426ee6ef7d.jpg)
+
+**NB:** As already agreed with Prof. Di Felice, Salvatore Pisciotta is doing the internship abroad and therefore can only take the exam online.
+In addition, the verbalization of the exam can indicatively take place only after November.
