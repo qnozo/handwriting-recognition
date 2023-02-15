@@ -5,9 +5,11 @@
 #include <SPI.h>
 // #include <TensorFlowLite_ESP32.h>
 
+#include <WiFi.h>
+#include <HTTPClient.h>
+
 #include "model.h"
 #include "model_settings.h"
-
 
 #include "tensorflow/lite/micro/all_ops_resolver.h"
 #include "tensorflow/lite/micro/micro_error_reporter.h"
@@ -62,11 +64,17 @@ TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 #define BUTTONS_SPACING_X 18 // X and Y gap
 #define BUTTONS_SPACING_Y 25
 #define BUTTONS_TEXTSIZE 1
-char buttonsLabel[4][8] = {"Clear", "Predict", "Send", "Del"};
+char buttonsLabel[4][8] = {"Clear", "Space", "Predict", "Del"};
+
+char wordButtonsLabel[2][15] = {
+    "",
+    "",
+};
 uint16_t buttonsColor[4] = {TFT_RED, TFT_LIGHTGREY, TFT_GREEN, TFT_RED};
 
 TFT_eSPI_Button buttons[4];
 
+TFT_eSPI_Button wordButtons[2];
 //---------
 #define TEXT_X 5
 #define TEXT_Y 220
@@ -75,6 +83,15 @@ TFT_eSPI_Button buttons[4];
 // uint8_t image[BOX_H * BOX_W];
 uint8_t *image;
 #define TO_SERIAL false
+
+// WiFi settings
+const char *ssid = "FRITZ!Box 7530 EK";
+const char *password = "30687470105462036360";
+char *host = (char *) "http://192.168.178.48:8090/";
+// int port = 8090;
+
+// WiFi settings
+
 char text[256] = "";
 namespace
 {
@@ -97,10 +114,17 @@ void resize(uint8_t *image, uint8_t *resized_image, uint8_t w1, uint8_t h1, uint
 void image_to_serial(uint8_t *resized_image);
 void sendParameters();
 char predict(uint8_t *resized_image);
-
-void setup()
+void initWordButtons()
 {
-    Serial.begin(921600);
+    for (uint8_t i = 0; i < 2; i++)
+    {
+
+        wordButtons[i].initButton(&tft, 70 + i * (86 + BUTTONS_SPACING_X), BOX_H + 20, 86, BUTTONS_H, TFT_BLACK, TFT_LIGHTGREY, TFT_BLACK, wordButtonsLabel[i], BUTTONS_TEXTSIZE);
+        wordButtons[i].drawButton();
+    }
+}
+void setup_display()
+{
     tft.init();
 
     // Set the rotation before we calibrate
@@ -114,7 +138,6 @@ void setup()
 
     tft.fillRect(BOX_X, BOX_Y, BOX_W, BOX_H, TFT_WHITE);
 
-
     tft.fillRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_WHITE);
     tft.drawRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_LIGHTGREY);
 
@@ -126,13 +149,10 @@ void setup()
     buttons[3].initButton(&tft, TEXT_WIDTH - 30, TEXT_Y + 20, BUTTONS_W, BUTTONS_H, TFT_BLACK, buttonsColor[3], TFT_BLACK, buttonsLabel[3], BUTTONS_TEXTSIZE);
     buttons[3].drawButton();
 
-
-    
-
     image = (uint8_t *)heap_caps_malloc(BOX_W * BOX_H, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    // tensorflow lite setup
-    // tflite::InitializeTarget();
-
+}
+void setup_model()
+{
     if (tensor_arena == NULL)
     {
         tensor_arena = (uint8_t *)heap_caps_malloc(kTensorArenaSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -180,12 +200,69 @@ void setup()
     input = interpreter->input(0);
     output = interpreter->output(0);
 }
+void setup_wifi()
+{
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED)
+    {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("");
+    Serial.println("WiFi connected");
+}
+void setup()
+{
+    Serial.begin(921600);
+    setup_display();
+    setup_model();
+    setup_wifi();
+    // tensorflow lite setup
+    // tflite::InitializeTarget();
+}
+void predict()
+{
+    get_image();
 
+    uint8_t resized_image[kNumRows * kNumCols];
+    resize(image, resized_image, BOX_W, BOX_H, kNumCols, kNumRows);
+    int len = strlen(text);
+    text[len] = predict(resized_image);
+    text[len + 1] = '\0';
+
+    // tft.fillRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_WHITE);
+    tft.setTextColor(TFT_BLACK, TFT_WHITE);
+    tft.drawString(text, TEXT_X + 10, TEXT_Y + 10, 2);
+
+    tft.fillRect(BOX_X, BOX_Y, BOX_W, BOX_H, TFT_WHITE);
+    // debug
+    if (TO_SERIAL)
+        image_to_serial(resized_image);
+}
+void sendText(const char * command);
+void writeText() {
+
+    tft.fillRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_WHITE);
+    tft.drawRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_LIGHTGREY);
+    tft.setTextColor(TFT_BLACK, TFT_WHITE);
+    tft.drawString(text, TEXT_X + 10, TEXT_Y + 10, 2);
+    buttons[3].drawButton();
+}
+void deleteLastWord(){
+    int space_pos = 0;
+    for (int i = strlen(text) - 1; i >= 0; i--) {
+        if (text[i] == ' ') {
+            space_pos = i;
+            break;
+        }
+    }
+    text[space_pos] = '\0';
+}
 void loop()
 {
 
     uint16_t x, y;
-    // See if there's any touch data for us
+    // // See if there's any touch data for us
     if (tft.getTouch(&x, &y))
     {
         if (contains(x, y))
@@ -213,43 +290,55 @@ void loop()
                     tft.fillRect(BOX_X, BOX_Y, BOX_W, BOX_H, TFT_WHITE);
                     break;
                 case 1:
-                    {
-                    // get_image
-
-                    get_image();
-
-                    uint8_t resized_image[kNumRows * kNumCols];
-                    resize(image, resized_image, BOX_W, BOX_H, kNumCols, kNumRows);
-                    int len = strlen(text);
-                    text[len] = predict(resized_image);
-                    text[len + 1] = '\0';
-                    
-                    // tft.fillRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_WHITE);
-                    tft.setTextColor(TFT_BLACK, TFT_WHITE);
-                    tft.drawString(text, TEXT_X + 10, TEXT_Y + 10, 4);
-
-                    tft.fillRect(BOX_X, BOX_Y, BOX_W, BOX_H, TFT_WHITE);
-                    // debug
-                    if (TO_SERIAL)
-                        image_to_serial(resized_image);
+                {
+                    // space
+                    // text[strlen(text)] = ' ';
+                    sendText("next_word");
+                    text[strlen(text)] = ' ';
+                    writeText();
                     break;
-                    }
+                }
                 case 2:
-                    // send
-
+                    predict();
+                    sendText("current_word");
                     break;
-                case 3: 
+                case 3:
                     // clear text
-                    tft.fillRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_WHITE);
-                    tft.drawRect(TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_HEIGHT, TFT_LIGHTGREY);
+
                     int len = strlen(text);
-                    text[len-1] = '\0';
-                    tft.setTextColor(TFT_BLACK, TFT_WHITE);
-                    tft.drawString(text, TEXT_X + 10, TEXT_Y + 10, 4);
+                    text[len - 1] = '\0';
+                    writeText();
                     buttons[3].drawButton(true);
                     break;
                 }
-                
+            }
+        }
+
+        for (uint8_t b = 0; b < 2; b++)
+        {
+            if (wordButtons[b].contains(x, y))
+            {
+                wordButtons[b].press(true);
+            }
+            else
+            {
+                wordButtons[b].press(false);
+            }
+
+            if (wordButtons[b].justReleased())
+                wordButtons[b].drawButton();
+            if (wordButtons[b].justPressed())
+            {
+                // if last char is not space, remove last word  
+                int len = strlen(text);
+                if (text[len - 1] != ' ') {
+                    deleteLastWord();
+                }
+                strcat(text, wordButtonsLabel[b]);
+                text[strlen(text)] = ' ';
+                writeText();
+                wordButtons[b].drawButton(true);
+                sendText("next_word");
             }
         }
     }
@@ -336,12 +425,11 @@ bool contains(int16_t x, int16_t y)
 
 void get_image()
 {
-    
+
     for (uint32_t y = 0; y < BOX_H; y++)
     {
         for (uint32_t x = 0; x < BOX_W; x++)
         {
-         
 
             uint16_t c = tft.readPixel(x, y);
             uint8_t gray = ((c >> 8) * 0.5) + ((c & 0xFF) * 0.5);
@@ -422,13 +510,11 @@ void resize(uint8_t *image, uint8_t *resized_image, uint8_t w1, uint8_t h1, uint
     uint32_t x = 0, y = 0;
     for (uint32_t i = 0; i < h2; i++)
     {
-    for (uint32_t j = 0; j < w2; j++)
+        for (uint32_t j = 0; j < w2; j++)
         {
-    
-        
+
             x = ((j * x_ratio) >> 16);
             y = ((i * y_ratio) >> 16);
-           
 
             resized_image[(i * w2) + j] = image[(y * w1) + x];
         }
@@ -468,14 +554,11 @@ char predict(uint8_t *resized_image)
     {
         for (uint32_t j = 0; j < kNumCols; j++)
         {
-            
+
             input->data.uint8[i * kNumCols + j] = tflite::FloatToQuantizedType<uint8_t>(
                 resized_image[(i * kNumCols) + j], input->params.scale, input->params.zero_point);
-
         }
-      
     }
-
 
     if (kTfLiteOk != interpreter->Invoke())
     {
@@ -497,8 +580,42 @@ char predict(uint8_t *resized_image)
             max = result;
             index = i;
         }
-
     }
 
     return kCategoryLabels[index];
+}
+void parser(char * response){
+    
+    response[strlen(response) - 3] = '\0';
+    memmove(response, response + 10, strlen(response) - 10 + 1);
+    strcpy(wordButtonsLabel[0], strtok(response, "-"));
+    strcpy(wordButtonsLabel[1], strtok(NULL, "-"));
+
+    initWordButtons();
+}
+void sendText(const char * command)
+{
+    HTTPClient http_client;
+    char url[strlen(host) + strlen(command) + 1];
+    strcpy(url, host);
+    strcat(url, command);
+    http_client.begin(url);
+    http_client.setTimeout(2000);
+    http_client.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    char result[strlen(text) + 8];
+    strcpy(result, "text=");
+    strcat(result, text);
+    Serial.println(result);
+    int httpCode = http_client.POST(result);
+    if (httpCode < 0) {
+        Serial.println(httpCode);
+        return;
+    }  
+   
+    // char * response = (char * ) 
+    char* response = (char *) http_client.getString().c_str();
+
+    parser(response);
+
+    
 }
